@@ -208,6 +208,7 @@
     }
 
     class Request implements Builder {
+        const BASE_URL = 'https://api.graphcms.com/simple/v1/';
         const TYPE_QUERY = 'query';
         const TYPE_MUTATION = 'mutation';
 
@@ -283,7 +284,7 @@
          * @return array
          */
         public function execute(string $project, string $token) : array {
-            $c = curl_init('https://api.graphcms.com/simple/v1/'.$project);
+            $c = curl_init(Request::BASE_URL.$project);
             curl_setopt($c, CURLOPT_POST, true);
             curl_setopt($c, CURLOPT_RETURNTRANSFER, true);
             curl_setopt($c, CURLOPT_HTTPHEADER, [
@@ -301,5 +302,33 @@
 
         public function __toString() : string {
             return $this->build();
+        }
+    }
+
+    class GraphCMS {
+        /** @var string The project ID */
+        protected $_project;
+        /** @var string The API auth token to use in  requests */
+        protected $_token;
+
+        public function __construct(string $pr, string $token) {
+            $this->_project = $pr;
+            $this->_token = $token;
+        }
+
+        /**
+         * Executes a request
+         *
+         * @param mixed $type
+         * @param arrray $commands
+         *
+         * @return array
+         */
+        public function execute($typeOrRequest, array $commands = []) : array {
+            if($typeOrRequest instanceof Request) {
+                return $typeOrRequest->execute($this->_project, $this->_token);
+            }
+            $r = new Request($typeOrRequest, $commands);
+            return $r->execute($this->_project, $this->_token);
         }
     }
