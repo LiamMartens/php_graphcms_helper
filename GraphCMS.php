@@ -11,13 +11,20 @@
      * part of a command (such as field list or param value
      */
     class Part implements Builder {
+        const TYPE_FIELDLIST = 0;
+        const TYPE_PARAM = 1;
+
+        /** @var int Contains the part type */
+        protected $_type = 0;
+        /** @var mixed Contains the Part value */
         protected $_value;
 
         /**
          * @param mixed $value
          */
-        public function __construct($value) {
+        public function __construct($value, int $type = 0) {
             $this->_value = $value;
+            $this->_type = $type;
         }
 
         /**
@@ -35,10 +42,14 @@
          * @return string
          */
         protected function expand(array $value) : string {
-            $output = '{';
+            $start = ($this->_type==Part::TYPE_FIELDLIST||array_keys($value)!==range(0, count($value) - 1)) ? '{' : '[';
+            $output = $start;
             foreach($value as $k => $v) {
                 if(!is_numeric($k)) {
-                    $output .= $k.':';
+                    $output .= $k;
+                    if($this->_type!=Part::TYPE_FIELDLIST||(!is_array($v)&&!$v instanceof Builder)) {
+                        $output .= ':';
+                    }
                 }
                 if(is_array($v)) {
                     $output.=$this->expand($v);
@@ -51,7 +62,7 @@
                 }
                 $output .= ',';
             }
-            return trim($output, ',').'}';
+            return trim($output, ',').($start=='{' ? '}' : ']');
         }
 
         /**
@@ -122,7 +133,7 @@
          * @param mixed $value The value of the parameter
          */
         public function addParam(string $key, $value) {
-            $this->_params[$key] = ($value instanceof Part) ? $value : new Part($value);
+            $this->_params[$key] = ($value instanceof Part) ? $value : new Part($value, Part::TYPE_PARAM);
         }
 
         /**
@@ -144,7 +155,7 @@
          */
         public function addField(string $field, $subfield = null) {
             if(is_array($subfield)) {
-                $this->_fields[$field] = ($subfield instanceof Part) ? $subfield : new Part($subfield);
+                $this->_fields[$field] = ($subfield instanceof Part) ? $subfield : new Part($subfield, Part::TYPE_FIELDLIST);
             } else {
                 $this->_fields[] = $field;
             }
@@ -187,7 +198,7 @@
             if(empty($this->_fields)) {
                 throw new Exception('No field list specified');
             }
-            $command .= (new Part($this->_fields))->build();
+            $command .= (new Part($this->_fields, Part::TYPE_FIELDLIST))->build();
             return $command;
         }
 
@@ -292,4 +303,3 @@
             return $this->build();
         }
     }
-
