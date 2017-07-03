@@ -3,7 +3,7 @@
     use \Exception;
 
     interface Builder {
-        function build() : string;
+        function build(int $flags = null) : string;
     }
 
     /**
@@ -14,17 +14,22 @@
         const TYPE_FIELDLIST = 0;
         const TYPE_PARAM = 1;
 
+        const FLAG_NOQUOTE = 0x0001;
+
         /** @var int Contains the part type */
         protected $_type = 0;
         /** @var mixed Contains the Part value */
         protected $_value;
+        /** @var int Contains the flags */
+        protected $_flags;
 
         /**
          * @param mixed $value
          */
-        public function __construct($value, int $type = 0) {
+        public function __construct($value, int $type = 0, int $flags = 0) {
             $this->_value = $value;
             $this->_type = $type;
+            $this->_flags = $flags;
         }
 
         /**
@@ -53,7 +58,7 @@
                 }
                 if(is_array($v)) {
                     $output.=$this->expand($v);
-                } else if(is_string($v)&&!is_numeric($k)) {
+                } else if(is_string($v)&&!is_numeric($k)&&(($this->_flags&self::FLAG_NOQUOTE) != 0x0001)) {
                     $output.='"'.addslashes($v).'"';
                 } else if($v instanceof Builder) {
                     $output .= $v->build();
@@ -70,11 +75,11 @@
          *
          * @return string
          */
-        public function build() : string {
+        public function build(int $flags = null) : string {
             if(is_array($this->_value)) {
                 return $this->expand($this->_value);
             }
-            if(is_string($this->_value)) {
+            if(is_string($this->_value)&&(($this->_flags&self::FLAG_NOQUOTE) != 0x0001)) {
                 return '"'.addslashes($this->_value).'"';
             }
             return print_r($this->_value, true);
@@ -136,7 +141,9 @@
          * @param mixed $value The value of the parameter
          */
         public function addParam(string $key, $value) {
-            $this->_params[$key] = ($value instanceof Part) ? $value : new Part($value, Part::TYPE_PARAM);
+            $this->_params[$key] = ($value instanceof Part) ? $value :
+                                    new Part($value, Part::TYPE_PARAM,
+                                    in_array($key, ['orderBy']) ? Part::FLAG_NOQUOTE : 0);
         }
 
         /**
@@ -184,7 +191,7 @@
          *
          * @return string
          */
-        public function build() : string {
+        public function build(int $flags = null) : string {
             $command = $this->_type.strtoupper(substr($this->_name, 0, 1)).substr($this->_name, 1);
             if($this->_type == Command::TYPE_ALL) {
                 $command .= 's';
@@ -270,7 +277,7 @@
          *
          * @return string
          */
-        public function build() : string {
+        public function build(int $flags = null) : string {
             $request = $this->_type.'{';
             foreach($this->_commands as $c) {
                 $request .= $c->build().',';
