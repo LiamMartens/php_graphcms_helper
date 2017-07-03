@@ -74,6 +74,9 @@
             if(is_array($this->_value)) {
                 return $this->expand($this->_value);
             }
+            if(is_string($this->_value)) {
+                return '"'.addslashes($this->_value).'"';
+            }
             return print_r($this->_value, true);
         }
 
