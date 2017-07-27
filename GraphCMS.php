@@ -1,215 +1,159 @@
 <?php
     namespace GraphCMS;
-    use \Exception;
-
-    interface Builder {
-        function build(int $flags = null) : string;
-    }
 
     /**
-     * The Part class handles building a single
-     * part of a command (such as field list or param value
+     * The Type class is a wrapper for setting variable
+     * datatypes. It has some common ones, wraps required option
+     * and so on
      */
-    class Part implements Builder {
-        const TYPE_FIELDLIST = 0;
-        const TYPE_PARAM = 1;
-
-        const FLAG_NOQUOTE = 0x0001;
-
-        /** @var int Contains the part type */
-        protected $_type = 0;
-        /** @var mixed Contains the Part value */
-        protected $_value;
-        /** @var int Contains the flags */
-        protected $_flags;
-
+    class Type {
         /**
-         * @param mixed $value
+         * Below are all current supported GraphCMS
+         * types. There's also enum, but Enum's are built
+         * as follows: MODELNAME_ENUMNAME
+         *
+         * Location and Json are the same since Location is just
+         * a JSON containing lat and lng keys
+         *
+         * Date and DateTime are the same since they are stored
+         * in the same way in GraphCMS
+         *
+         * Color and String are the same because a color
+         * is simply passed as a String like this
+         * {"r": 255, "g": 255, "b": 255}
          */
-        public function __construct($value, int $type = 0, int $flags = 0) {
-            $this->_value = $value;
+        const ID = 'Id';
+        const STRING = 'String';
+        const COLOR = 'String';
+        const INT = 'Int';
+        const JSON = 'Json';
+        const LOCATION = 'Json';
+        const BOOL = 'Boolean';
+        const FLOAT = 'Float';
+        const DATE = 'DateTime';
+        const DATETIME = 'DateTime';
+        const ORDER = 'OrderBy';
+
+        protected $_prefix;
+        protected $_type;
+        protected $_required;
+        protected $_multiple;
+        public function __construct(string $type, bool $required = false, bool $multiple = false) {
             $this->_type = $type;
-            $this->_flags = $flags;
+            $this->_required = $required;
+            $this->_multiple = $multiple;
+            $this->_prefix = '';
+        }
+
+        public function isRequired() : Type {
+            $this->_required = true;
+            return $this;
+        }
+
+        public function isMultiple() : Type {
+            $this->_multiple = true;
+            return $this;
         }
 
         /**
-         * Sets and overrides the value
+         * The prefix method can be used to set the prefix
+         * which is sometimes necessary (i.e, Enum type, OrderBy type
+         * ModelOrderBy)
          *
-         * @param mixed $value
+         * @param string $prefix
          */
-        public function setValue($value) {
-            $this->_value = $value;
+        public function prefix(string $prefix) : Type {
+            $this->_prefix = $prefix;
+            return $this;
         }
 
-        /**
-         * Expands an array to query string
-         *
-         * @return string
-         */
-        protected function expand(array $value) : string {
-            $start = ($this->_type==Part::TYPE_FIELDLIST||array_keys($value)!==range(0, count($value) - 1)) ? '{' : '[';
-            $output = $start;
-            foreach($value as $k => $v) {
-                if(!is_numeric($k)) {
-                    $output .= $k;
-                    if($this->_type!=Part::TYPE_FIELDLIST||(!is_array($v)&&!$v instanceof Builder)) {
-                        $output .= ':';
-                    }
-                }
-                if(is_array($v)) {
-                    $output.=$this->expand($v);
-                } else if(is_string($v)&&!is_numeric($k)&&(($this->_flags&self::FLAG_NOQUOTE) != 0x0001)) {
-                    $output.='"'.addslashes($v).'"';
-                } else if($v instanceof Builder) {
-                    $output .= $v->build();
+        public function __toString() : string {
+            $type = $this->_type.($this->_required ? '!' : '');
+            if($this->_multiple) {
+                return '['.$type.']';
+            }
+            return $type;
+        }
+    }
+
+    abstract class L implements \Countable {
+        public abstract function build() : string;
+        public abstract function __toString() : string;
+    }
+    /**
+     * The variables class is a helper class for building a
+     * list of variables and types
+     */
+    class Variables extends L {
+        /** @var array Contains a list of variables and types */
+        protected $_variables = [];
+
+        public function __construct(array $vars = []) {
+            $this->_variables = $vars;
+        }
+
+        public function count() : int {
+            return count($this->_variables);
+        }
+
+        public function add(string $name, Type $type) : Variables {
+            $this->_variables[$name] = $type;
+            return $this;
+        }
+
+        public function build() : string {
+            $build = '';
+            foreach($this->_variables as $k => $v) {
+                $build .= '$'.$k.':'.$v.',';
+            }
+            return trim($build, ',');
+        }
+
+        public function __toString() : string {
+            return $this->build();
+        }
+    }
+    /**
+     * The DeepList class is a helper class for building
+     * a nested list
+     */
+    class DeepList extends L {
+        /** @var array Contains the list which can be built, should only contain string keys and array or string values (unqoted print) */
+        protected $_list = [];
+        /** @var bool Whether the subfields are colon separated */
+        protected $_is_separated = false;
+
+        public function __construct(array $list = [], bool $is_sep = false) {
+            $this->_list = $list;
+            $this->_is_separated = $is_sep;
+        }
+
+        public function count() : int {
+            return count($this->_list);
+        }
+
+        public function add(string $name, array $sub = null) {
+            if(!isset($sub)) {
+                $this->_list[] = $name;
+            } else {
+                $this->_list[$name] = $sub;
+            }
+            return $this;
+        }
+
+        public function build() : string {
+            $build = '';
+            foreach($this->_list as $k => $v) {
+                if(is_string($k)&&is_array($v)) {
+                    $build .= $k.($this->_is_separated ? ':' : '').'{'.(new DeepList($v, $this->_is_separated))->build().'}';
+                } else if(is_string($k)&&!is_array($v)) {
+                    $build .= $k.($this->_is_separated ? ':' : '').$v;
                 } else {
-                    $output .= print_r($v, true);
+                    $build .= $v;
                 }
-                $output .= ',';
+                $build .= ',';
             }
-            return trim($output, ',').($start=='{' ? '}' : ']');
-        }
-
-        /**
-         * Builds the part as a query string
-         *
-         * @return string
-         */
-        public function build(int $flags = null) : string {
-            if(is_array($this->_value)) {
-                return $this->expand($this->_value);
-            }
-            if(is_string($this->_value)&&(($this->_flags&self::FLAG_NOQUOTE) != 0x0001)) {
-                return '"'.addslashes($this->_value).'"';
-            }
-            return print_r($this->_value, true);
-        }
-
-        /**
-         * @return string
-         */
-        public function __toString() : string {
-            return $this->build();
-        }
-    }
-
-    class Command implements Builder {
-        const TYPE_ALL = 'all';
-        const TYPE_CREATE = 'create';
-        const TYPE_UPDATE = 'update';
-        const TYPE_UPDATE_CREATE = 'updateOrCreate';
-        const TYPE_REMOVE = 'remove';
-
-        /** @var string The type of the command (all, create, update, remove, ...) */
-        protected $_type = '';
-        /** @var string the name of the command model */
-        protected $_name = '';
-        /** @var array Contains the params for the command */
-        protected $_params = [];
-        /** @var array Contains the fields to fetch with the command */
-        protected $_fields = [];
-
-        public function __construct(string $name, string $type = '', array $fields = [], array $params = []) {
-            $this->_name = $name;
-            $this->_type = $type;
-            $this->addParams($params);
-            $this->addFields($fields);
-        }
-
-        /**
-         * Sets the type
-         *
-         * @param string New type
-         */
-        public function setType(string $type) {
-            $this->_type = $type;
-        }
-
-        /**
-         * Sets the name of the content model
-         *
-         * @param string $name
-         */
-         public function setName(string $name) {
-             $this->_name = $name;
-         }
-
-        /**
-         * Adds a parameter to the command
-         *
-         * @param string $key The name of the parameter key
-         * @param mixed $value The value of the parameter
-         */
-        public function addParam(string $key, $value) {
-            $this->_params[$key] = ($value instanceof Part) ? $value :
-                                    new Part($value, Part::TYPE_PARAM,
-                                    in_array($key, ['orderBy']) ? Part::FLAG_NOQUOTE : 0);
-        }
-
-        /**
-         * Adds some parameters
-         *
-         * @param array $params
-         */
-        public function addParams(array $params) {
-            foreach($params as $k => $v) {
-                $this->addParam($k, $v);
-            }
-        }
-
-        /**
-         * Adds a field
-         *
-         * @param string $field The name of the field
-         * @param mixed $subfield The possible subfield
-         */
-        public function addField(string $field, $subfield = null) {
-            if(is_array($subfield)) {
-                $this->_fields[$field] = ($subfield instanceof Part) ? $subfield : new Part($subfield, Part::TYPE_FIELDLIST);
-            } else {
-                $this->_fields[] = $field;
-            }
-        }
-
-        /**
-         * Adds some fields
-         *
-         * @param array $fields
-         */
-        public function addFields(array $fields) {
-            foreach($fields as $k => $v) {
-                if(is_numeric($k)&&is_string($v)) {
-                    $this->addField($v);
-                } else if(is_string($k)&&is_array($v)) {
-                    $this->addField($k, $v);
-                }
-            }
-        }
-
-        /**
-         * Builds the command
-         *
-         * @return string
-         */
-        public function build(int $flags = null) : string {
-            $command = $this->_type.strtoupper(substr($this->_name, 0, 1)).substr($this->_name, 1);
-            if($this->_type == Command::TYPE_ALL) {
-                $command .= 's';
-            }
-            // add parameters if not empty
-            if(!empty($this->_params)) {
-                $command.='(';
-                foreach($this->_params as $name => $value) {
-                    $command.=$name.':'.$value->build().',';
-                }
-                $command = trim($command, ',').')';
-            }
-            // add field list
-            if(empty($this->_fields)) {
-                throw new Exception('No field list specified');
-            }
-            $command .= (new Part($this->_fields, Part::TYPE_FIELDLIST))->build();
-            return $command;
+            return trim($build, ',');
         }
 
         public function __toString() : string {
@@ -217,128 +161,175 @@
         }
     }
 
-    class Request implements Builder {
-        const BASE_URL = 'https://api.graphcms.com/simple/v1/';
-        const TYPE_QUERY = 'query';
+    class Query {
+        /**
+         * The 2 currently supported GraphQL
+         * query types in GraphCMS
+         */
         const TYPE_MUTATION = 'mutation';
+        const TYPE_QUERY = 'query';
 
-        /** @var string The type of the command (query, mutation)? */
-        protected $_type = 'query';
-        /** @var array Contains the commands to execute in the request */
-        protected $_commands = [];
+        protected $_executed = false;
+        /** @var string Type of query **/
+        protected $_type = null;
+        /** @var string Contains the method to execute */
+        protected $_method = null;
+        /** @var Variables Contains the variables list */
+        protected $_variables = null;
+        /** @var DeepList Contains a list of parameters */
+        protected $_params = null;
+        /** @var DeepList Contains a list of fields */
+        protected $_fields = null;
 
-        public function __construct(string $type, array $commands = []) {
+        public function __construct(string $type, string $method, array $fields = [], array $variables = [], array $params = []) {
             $this->_type = $type;
-            $this->addCommands($commands);
+            $this->_method = $method;
+            $this->_params = new DeepList($params, true);
+            $this->_fields = new DeepList($fields);
+            $this->_variables = new Variables($variables);
         }
 
         /**
-         * Sets the request type
+         * Returns the variables list
          *
-         * @param string $type
+         * @return Variables
          */
-        public function setType(string $type) {
-            $this->_type = $type;
+        public function variables() : Variables {
+            return $this->_variables;
         }
 
         /**
-         * Adds a command to the request
+         * Returns the parameter list
          *
-         * @param mixed $nameOrCommand The name of the command or a Command object
-         * @param string $type The type of the command
-         * @param array $params The parameters
-         * @param array $fields The fields
+         * @return DeepList
          */
-        public function addCommand($nameOrCommand, string $type = '', array $fields = [], array $params = []) {
-            if($nameOrCommand instanceof Command) {
-                $this->_commands[] = $nameOrCommand;
-            } else {
-                $this->_commands[] = new Command($nameOrCommand, $type, $fields, $params);
-            }
+        public function params() : DeepList {
+            return $this->_params;
         }
 
         /**
-         * Adds multiple commands
+         * Returns the fields list
          *
-         * @param array $commands Array of commands
+         * @return DeepList
          */
-        public function addCommands(array $commands) {
-            foreach($commands as $c) {
-                if(is_array($c)) {
-                    call_user_func_array([$this, 'addCommand'], $c);
-                } else if($c instanceof Command) {
-                    $this->addCommand($c);
-                }
-            }
+        public function fields() : DeepList {
+            return $this->_fields;
         }
 
         /**
-         * Builds the request
+         * Builds the query
          *
          * @return string
          */
-        public function build(int $flags = null) : string {
-            $request = $this->_type.'{';
-            foreach($this->_commands as $c) {
-                $request .= $c->build().',';
+        public function build() : string {
+            // start query
+            $query = $this->_type.' method';
+            // add variables if any
+            if(count($this->_variables)>0) {
+                $query .= '('.$this->_variables->build().')';
             }
-            return trim($request, ',').'}';
+            $query .= '{';
+            // add method
+            $query .= $this->_method;
+            // add params if any
+            if(count($this->_params)>0) {
+                $query .= '('.$this->_params->build().')';
+            }
+            $query .= '{';
+            // add field list
+            $query .= $this->_fields->build();
+            // end query
+            $query.='}}';
+            // return
+            return $query;
         }
 
         /**
-         * Executes the request and returns the data
+         * Whether the query was already executed
          *
-         * @param string $project Project ID
-         * @param string $token The API token
-         *
-         * @return array
+         * @return bool
          */
-        public function execute(string $project, string $token) : array {
-            $c = curl_init(Request::BASE_URL.$project);
+        public function executed() : bool {
+            return $this->_executed;
+        }
+
+        /**
+         * Executes a query using a project id, a token and
+         * an array of values
+         *
+         * @param string $project The project ID
+         * @param string $token The AUTH token
+         * @param array $values The array of variables
+         *
+         * @return Array
+         */
+        public function execute(string $project, string $token, array $values = []) : array {
+            $query = $this->build();
+            // execute
+            $c = curl_init(GraphCMS::SIMPLE_URL.$project);
             curl_setopt($c, CURLOPT_POST, true);
             curl_setopt($c, CURLOPT_RETURNTRANSFER, true);
             curl_setopt($c, CURLOPT_HTTPHEADER, [
                 'Content-Type: application/json',
                 'Authorization: Bearer '.$token
             ]);
-            curl_setopt($c, CURLOPT_POSTFIELDS, json_encode(['query' => $this->build()]));
+            curl_setopt($c, CURLOPT_POSTFIELDS, json_encode([
+                'operationName' => 'method',
+                'query' => $query,
+                'variables' => $values
+            ]));
             $result = curl_exec($c);
             curl_close($c);
-            if($result !== false) {
-                return json_decode($result, true);
-            }
-            return [];
-        }
-
-        public function __toString() : string {
-            return $this->build();
+            // set executed
+            $this->_executed = true;
+            return json_decode($result, true);
         }
     }
 
     class GraphCMS {
-        /** @var string The project ID */
-        protected $_project;
-        /** @var string The API auth token to use in  requests */
-        protected $_token;
+        const SIMPLE_URL = 'https://api.graphcms.com/simple/v1/';
 
-        public function __construct(string $pr, string $token) {
-            $this->_project = $pr;
+        /** @var string Contains the project id */
+        protected $_project;
+        /** @var string Contains the auth token */
+        protected $_token;
+        /** @var array Contains queries */
+        protected $_queries;
+
+        public function __construct(string $project, string $token) {
+            $this->_project = $project;
             $this->_token = $token;
+            $this->_queries = [];
         }
 
         /**
-         * Executes a request
+         * Creates a new query
          *
-         * @param mixed $type
-         * @param arrray $commands
+         * @param string $type Type of query (query, mutation)
+         * @param string $method The name of the method allModels, ...
+         * @param array $fields Optional fields array
+         * @param array $variables Optional variables array
+         * @param array $params Optional params array
+         *
+         * @return Query
+         */
+        public function query(string $type, string $method, array $fields = [], array $variables = [], array $params = []) : Query {
+            $q = new Query($type, $method, $fields, $variables, $params);
+            $this->_queries[] = $q;
+            return $q;
+        }
+
+        /**
+         * Executes the first non executed query
          *
          * @return array
          */
-        public function execute($typeOrRequest, array $commands = []) : array {
-            if($typeOrRequest instanceof Request) {
-                return $typeOrRequest->execute($this->_project, $this->_token);
+        public function execute(array $values = []) : array {
+            foreach($this->_queries as $q) {
+                if(!$q->executed()) {
+                    return $q->execute($this->_project, $this->_token, []);
+                }
             }
-            $r = new Request($typeOrRequest, $commands);
-            return $r->execute($this->_project, $this->_token);
+            return [];
         }
     }
