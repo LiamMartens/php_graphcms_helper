@@ -1,0 +1,5 @@
+{
+    "require": {
+        "tomaj/hermes": "^1.3"
+    }
+}

@@ -1,5 +1,5 @@
 <?php
-    namespace GraphCMS\CacheAdapters;
+    namespace GraphCMS\CacheAdapters\SyncFileCache;
     use GraphCMS\Query;
     use GraphCMS\CacheAdapter;
 

@@ -28,7 +28,7 @@
          * @param Query $query
          * @return bool
          */
-        public abstract function update(Query $query) : bool;
+        public abstract function update(Query $query, array $values = []) : bool;
     }
 
     /**
@@ -162,7 +162,7 @@
             return count($this->_list);
         }
 
-        public function add(string $name, array $sub = null) {
+        public function add(string $name, $sub = null) {
             if(!isset($sub)) {
                 $this->_list[] = $name;
             } else {
