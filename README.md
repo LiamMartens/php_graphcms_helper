@@ -25,3 +25,14 @@ You can call `execute` on your `GraphCMS` client to execute the first non-execut
 ```
 $data = $g->execute([ 'titleStartsWith' => 'The' ]);
 ```
+
+## Using a CacheAdapter
+The `GraphCMS` client has functionality built in to use any type of cache by using the `CacheAdapter`
+class. For example you can use the `SyncFileCache` adapter to write the queries to files synchronously.  
+
+**Example**  
+```
+$g->setCacheAdapter(new SyncFileCache(__DIR__.'/cache'));
+```  
+This example will use the `SyncFileCache` adapter to cache
+the queries.
