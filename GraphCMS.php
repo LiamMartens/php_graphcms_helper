@@ -9,18 +9,17 @@
          * @param array $default
          * @return array
          */
-        public abstract function get(string $query, array $default = []) : array;
+        public abstract function get(string $query, bool &$expired = null) : array;
 
         /**
          * For updating a value in cache
          * this could be using an emitter with
          * beanstalk, this could be synchronously...
          *
-         * @param string $query
-         * @param array $data
+         * @param Query $query
          * @return bool
          */
-        public abstract function update(string $query, array $data) : bool;
+        public abstract function update(Query $query) : bool;
     }
 
     /**
@@ -384,9 +383,24 @@
         public function execute(array $values = []) : array {
             foreach($this->_queries as $q) {
                 if(!$q->executed()) {
-                    $data = $q->execute([]);
-
-                    return $data;
+                    // build query string
+                    $query = $q->build();
+                    // get from cache if available
+                    if(isset($this->_cache)) {
+                        $expired = false;
+                        $data = $this->_cache->get($query, $expired);
+                        // if empty? return synchronously
+                        if(empty($data)) {
+                            return $q->execute($values);
+                        }
+                        // if expired call for update and return cached data
+                        if($expired) {
+                            $this->_cache->update($query);
+                        }
+                        return $data;
+                    }
+                    // no cache, synchronously execute
+                    return $q->execute($values);
                 }
             }
             return [];
