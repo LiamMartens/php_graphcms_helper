@@ -1,6 +1,28 @@
 <?php
     namespace GraphCMS;
 
+    abstract class CacheAdapter {
+        /**
+         * For getting a value from cache
+         *
+         * @param string $query
+         * @param array $default
+         * @return array
+         */
+        public abstract function get(string $query, array $default = []) : array;
+
+        /**
+         * For updating a value in cache
+         * this could be using an emitter with
+         * beanstalk, this could be synchronously...
+         *
+         * @param string $query
+         * @param array $data
+         * @return bool
+         */
+        public abstract function update(string $query, array $data) : bool;
+    }
+
     /**
      * The Type class is a wrapper for setting variable
      * datatypes. It has some common ones, wraps required option
@@ -169,6 +191,11 @@
         const TYPE_MUTATION = 'mutation';
         const TYPE_QUERY = 'query';
 
+        /** @var string The GraphCMS project id */
+        protected $_project = null;
+        /** @var string The GraphCMS token */
+        protected $_token = null;
+        /** @var bool Whether the query has been executed */
         protected $_executed = false;
         /** @var string Type of query **/
         protected $_type = null;
@@ -187,6 +214,28 @@
             $this->_params = new DeepList($params, true);
             $this->_fields = new DeepList($fields);
             $this->_variables = new Variables($variables);
+        }
+
+        /**
+         * Sets the project id
+         *
+         * @param string $project
+         * @return Query
+         */
+        public function setProjectId(string $project) : Query {
+            $this->_project = $project;
+            return $this;
+        }
+
+        /**
+         * Sets the token
+         *
+         * @param string $token
+         * @return Query
+         */
+        public function setToken(string $token) : Query {
+            $this->_token = $token;
+            return $this;
         }
 
         /**
@@ -263,15 +312,15 @@
          *
          * @return Array
          */
-        public function execute(string $project, string $token, array $values = []) : array {
+        public function execute(array $values = []) : array {
             $query = $this->build();
             // execute
-            $c = curl_init(GraphCMS::SIMPLE_URL.$project);
+            $c = curl_init(GraphCMS::SIMPLE_URL.$this->_project);
             curl_setopt($c, CURLOPT_POST, true);
             curl_setopt($c, CURLOPT_RETURNTRANSFER, true);
             curl_setopt($c, CURLOPT_HTTPHEADER, [
                 'Content-Type: application/json',
-                'Authorization: Bearer '.$token
+                'Authorization: Bearer '.$this->_token
             ]);
             curl_setopt($c, CURLOPT_POSTFIELDS, json_encode([
                 'operationName' => 'method',
@@ -289,6 +338,8 @@
     class GraphCMS {
         const SIMPLE_URL = 'https://api.graphcms.com/simple/v1/';
 
+        /** @var CacheAdapter The connection to the cache */
+        protected $_cache;
         /** @var string Contains the project id */
         protected $_project;
         /** @var string Contains the auth token */
@@ -300,6 +351,11 @@
             $this->_project = $project;
             $this->_token = $token;
             $this->_queries = [];
+        }
+
+        public function setCacheAdapter(CacheAdapter $adapter) : GraphCMS {
+            $this->_cache = $adapter;
+            return $this;
         }
 
         /**
@@ -315,6 +371,7 @@
          */
         public function query(string $type, string $method, array $fields = [], array $variables = [], array $params = []) : Query {
             $q = new Query($type, $method, $fields, $variables, $params);
+            $q->setProjectId($this->_project)->setToken($this->_token);
             $this->_queries[] = $q;
             return $q;
         }
@@ -327,7 +384,9 @@
         public function execute(array $values = []) : array {
             foreach($this->_queries as $q) {
                 if(!$q->executed()) {
-                    return $q->execute($this->_project, $this->_token, []);
+                    $data = $q->execute([]);
+
+                    return $data;
                 }
             }
             return [];
