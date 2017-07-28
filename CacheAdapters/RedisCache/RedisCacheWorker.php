@@ -8,9 +8,13 @@
     use GraphCMS\Query;
     use GraphCMS\CacheAdapters\RedisCache\RedisCache;
 
-    require __DIR__.'/vendor/autoload.php';
-    require __DIR__.'/../../GraphCMS.php';
-    require __DIR__.'/RedisCache.php';
+    /**
+     * Don't forget to include the correct files
+     *
+     * require __DIR__.'/vendor/autoload.php';
+     * require __DIR__.'/../../GraphCMS.php';
+     * require __DIR__.'/RedisCache.php';
+     */
 
     // set default values
     $host = '127.0.0.1';

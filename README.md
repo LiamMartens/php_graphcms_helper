@@ -57,6 +57,8 @@ Your CLI file will look something like this:
     include 'vendor/autoload.php';
     // for graphcms usage
     include 'GraphCMS.php';
+    // for RedisCache usage
+    include 'RedisCache.php';
 
     // include the worker
     include 'CacheAdapters/RedisCache/RedisCacheWorker.php';
