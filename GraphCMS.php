@@ -12,6 +12,15 @@
         public abstract function get(string $query, bool &$expired = null) : array;
 
         /**
+         * For directly setting a value in cache
+         *
+         * @param string $query
+         * @param array $data
+         * @return bool
+         */
+        public abstract function set(string $query, array $data) : bool;
+
+        /**
          * For updating a value in cache
          * this could be using an emitter with
          * beanstalk, this could be synchronously...
@@ -302,6 +311,17 @@
         }
 
         /**
+         * Sets the query to executed
+         * without executing
+         *
+         * @return Query
+         */
+        public function cached() : Query {
+            $this->_executed = true;
+            return $this;
+        }
+
+        /**
          * Executes a query using a project id, a token and
          * an array of values
          *
@@ -391,12 +411,15 @@
                         $data = $this->_cache->get($query, $expired);
                         // if empty? return synchronously
                         if(empty($data)) {
-                            return $q->execute($values);
+                            $data = $q->execute($values);
+                            $this->_cache->set($query, $data);
+                            return $data;
                         }
                         // if expired call for update and return cached data
                         if($expired) {
-                            $this->_cache->update($query);
+                            $this->_cache->update($q, $values);
                         }
+                        $q->cached();
                         return $data;
                     }
                     // no cache, synchronously execute
